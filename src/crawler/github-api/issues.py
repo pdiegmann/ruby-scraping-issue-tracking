@@ -11,8 +11,21 @@ def main():
     data_folder = os.path.join('..', '..', '..', 'data')
     archive_folder = os.path.join('..', '..', '..', 'archive')
 
+    users = {}
+    issues = {}
+
     if os.path.exists(data_folder) and os.listdir(data_folder) != []:
-        shutil.move(data_folder, os.path.join(archive_folder, datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')))
+        if raw_input("enter y to continue previous crawl, all other inputs will start a new crawl: ") == "y":
+            for directory_obj in os.listdir(os.path.join(data_folder, 'github')):
+                if not directory_obj.endswith('.jsonl'): continue
+                with jsonlines.open(os.path.join(data_folder, 'github', directory_obj), mode='r') as reader:
+                    for obj in reader:
+                        if directory_obj.startswith('users-'):
+                            users[obj['id']] = obj
+                        elif directory_obj.startswith('issues-'):
+                            issues[obj['id']] = obj
+        else:
+            shutil.move(data_folder, os.path.join(archive_folder, datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')))
 
     if not os.path.exists(data_folder):
         os.mkdir(data_folder)
@@ -23,9 +36,6 @@ def main():
     print 'starting...'
     g = Github("75306889b3e191168d86d0547577892a2a24f2dd")
 
-    users = {}
-    issues = {}
-
     print 'fetching and processing issues...'
     counter = 0
     start_time = time.time()
@@ -33,6 +43,10 @@ def main():
     with jsonlines.open(os.path.join(data_folder, 'github', 'users-' + time.strftime('%Y%m%d-%H%M%S', time.localtime(start_time))) + '.jsonl', mode='w', flush=True) as user_writer:
         with jsonlines.open(os.path.join(data_folder, 'github', 'issues-' + time.strftime('%Y%m%d-%H%M%S', time.localtime(start_time))) + '.jsonl', mode='w', flush=True) as issue_writer:
             for issue in g.get_organization('ruby').get_repo('ruby').get_issues(state='all', sort='created', direction='asc'):
+                if issue.id in issues:
+                    print ' >>> SKIPPING ISSUE ' + str(issue.id) + ' <<< ',
+                    continue
+
                 labels = []
                 for label in issue.labels:
                     labels.append(label.name)
