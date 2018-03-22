@@ -63,7 +63,7 @@ def main():
             duration = time.time() - start_time
             print '| ' + str(counter) + ' (' + str(datetime.timedelta(seconds=duration)) + ') |',
             sys.stdout.flush()
-        if counter % 100 == 0: break
+        #if counter % 100 == 0: break
 
     with open('../../../data/github/users.json' ,'w') as output:
         json.dump(users, output, default=datetime_json_serializer)
