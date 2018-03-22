@@ -26,6 +26,11 @@ def main():
         for assignee in issue.assignees:
             assignees.append(parse_and_add_user(users, assignee)['id'])
 
+        reactions = {}
+        for reaction in issue.get_reactions():
+            if reaction.content not in reactions: reactions[reaction.content] = []
+            reactions[reaction.content].append(parse_and_add_user(users, reaction.user)['id'])
+
         issues[issue.id] = {
             'id': issue.id,
             'url': issue.url,
@@ -40,6 +45,7 @@ def main():
             'closed_at': issue.closed_at,
             'created_at': issue.created_at,
             'updated_at': issue.updated_at,
+            'reactions': reactions,
             'comments': []
         }
 
@@ -63,7 +69,7 @@ def main():
             duration = time.time() - start_time
             print '| ' + str(counter) + ' (' + str(datetime.timedelta(seconds=duration)) + ') |',
             sys.stdout.flush()
-        #if counter % 100 == 0: break
+        if counter % 2 == 0: break
 
     with open('../../../data/github/users.json' ,'w') as output:
         json.dump(users, output, default=datetime_json_serializer)
