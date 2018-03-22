@@ -3,6 +3,7 @@ import json
 import sys
 import datetime
 import time
+import jsonlines
 
 def main():
     print 'starting...'
@@ -14,72 +15,79 @@ def main():
     print 'fetching and processing issues...'
     counter = 0
     start_time = time.time()
-    for issue in g.get_organization('ruby').get_repo('ruby').get_issues():
-        labels = []
-        for label in issue.labels:
-            labels.append(label.name)
 
-        assignees = []
-        if issue.assignee is not None:
-            assignees.append(parse_and_add_user(users, issue.assignee)['id'])
+    with jsonlines.open('../../../data/github/users-' + time.strftime('%Y%m%d-%H%M%S', time.localtime(start_time)) + '.jsonl', mode='w', flush=True) as user_writer:
+        with jsonlines.open('../../../data/github/issues-' + time.strftime('%Y%m%d-%H%M%S', time.localtime(start_time)) + '.jsonl', mode='w', flush=True) as issue_writer:
+            for issue in g.get_organization('ruby').get_repo('ruby').get_issues():
+                labels = []
+                for label in issue.labels:
+                    labels.append(label.name)
 
-        for assignee in issue.assignees:
-            assignees.append(parse_and_add_user(users, assignee)['id'])
+                assignees = []
+                if issue.assignee is not None:
+                    assignees.append(parse_and_add_user(users, user_writer, issue.assignee)['id'])
 
-        reactions = {}
-        for reaction in issue.get_reactions():
-            if reaction.content not in reactions: reactions[reaction.content] = []
-            reactions[reaction.content].append(parse_and_add_user(users, reaction.user)['id'])
+                for assignee in issue.assignees:
+                    assignees.append(parse_and_add_user(users, user_writer, assignee)['id'])
 
-        issues[issue.id] = {
-            'id': issue.id,
-            'url': issue.url,
-            'number': issue.number,
-            'state': issue.state,
-            'user': parse_and_add_user(users, issue.user)['id'],
-            'title': issue.title,
-            'text': issue.body,
-            'labels': labels,
-            'assignees': assignees,
-            'is-pull-request': issue.pull_request is not None,
-            'closed_at': issue.closed_at,
-            'created_at': issue.created_at,
-            'updated_at': issue.updated_at,
-            'reactions': reactions,
-            'comments': []
-        }
+                reactions = {}
+                for reaction in issue.get_reactions():
+                    if reaction.content not in reactions: reactions[reaction.content] = []
+                    reactions[reaction.content].append(parse_and_add_user(users, user_writer, reaction.user)['id'])
 
-        for comment in issue.get_comments():
-            reactions = {}
-            for reaction in comment.get_reactions():
-                if reaction.content not in reactions: reactions[reaction.content] = []
-                reactions[reaction.content].append(parse_and_add_user(users, reaction.user)['id'])
+                issues[issue.id] = {
+                    'id': issue.id,
+                    'url': issue.url,
+                    'number': issue.number,
+                    'state': issue.state,
+                    'user': parse_and_add_user(users, user_writer, issue.user)['id'],
+                    'title': issue.title,
+                    'text': issue.body,
+                    'labels': labels,
+                    'assignees': assignees,
+                    'is-pull-request': issue.pull_request is not None,
+                    'closed_at': str(issue.closed_at),
+                    'created_at': str(issue.created_at),
+                    'updated_at': str(issue.updated_at),
+                    'reactions': reactions,
+                    'comments': []
+                }
 
-            issues[issue.id]['comments'].append({
-                'id': comment.id,
-                'text': comment.body,
-                'url': comment.url,
-                'user': parse_and_add_user(users, comment.user)['id'],
-                'created_at': comment.created_at,
-                'reactions': reactions
-            })
-        print '.',
-        counter = counter + 1
-        if counter % 10 == 0:
-            duration = time.time() - start_time
-            print '| ' + str(counter) + ' (' + str(datetime.timedelta(seconds=duration)) + ') |',
-            sys.stdout.flush()
-        #if counter % 2 == 0: break
+                for comment in issue.get_comments():
+                    reactions = {}
+                    for reaction in comment.get_reactions():
+                        if reaction.content not in reactions: reactions[reaction.content] = []
+                        reactions[reaction.content].append(parse_and_add_user(users, user_writer, reaction.user)['id'])
 
-    with open('../../../data/github/users.json' ,'w') as output:
-        json.dump(users, output, default=datetime_json_serializer)
+                    issues[issue.id]['comments'].append({
+                        'id': comment.id,
+                        'text': comment.body,
+                        'url': comment.url,
+                        'user': parse_and_add_user(users, user_writer, comment.user)['id'],
+                        'created_at': str(comment.created_at),
+                        'reactions': reactions
+                    })
 
-    with open('../../../data/github/issues.json' ,'w') as output:
-        json.dump(issues, output, default=datetime_json_serializer)
+                issue_writer.write(issues[issue.id])
 
-def parse_and_add_user(users, user_raw):
+                print '.',
+                counter = counter + 1
+                if counter % 10 == 0:
+                    duration = time.time() - start_time
+                    print '| ' + str(counter) + ' (' + str(datetime.timedelta(seconds=duration)) + ') |',
+                    sys.stdout.flush()
+
+#        with open('../../../data/github/users.json' ,'w') as output:
+#            json.dump(users, output, default=datetime_json_serializer)
+#
+#        with open('../../../data/github/issues.json' ,'w') as output:
+#            json.dump(issues, output, default=datetime_json_serializer)
+
+def parse_and_add_user(users, writer, user_raw):
     if user_raw is not None and user_raw.id is not None and user_raw.id not in users:
         user_parsed = parse_user(user_raw)
+        if writer is not None:
+            writer.write(user_parsed)
         users[user_raw.id] = user_parsed
         return user_parsed
     elif user_raw.id in users:
