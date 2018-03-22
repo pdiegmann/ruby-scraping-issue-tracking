@@ -4,8 +4,22 @@ import sys
 import datetime
 import time
 import jsonlines
+import os
+import shutil
 
 def main():
+    data_folder = os.path.join('..', '..', '..', 'data')
+    archive_folder = os.path.join('..', '..', '..', 'archive')
+
+    if os.path.exists(data_folder) and os.listdir(data_folder) != []:
+        shutil.move(data_folder, os.path.join(archive_folder, datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')))
+
+    if not os.path.exists(data_folder):
+        os.mkdir(data_folder)
+
+    if not os.path.exists(os.path.join(data_folder, 'github')):
+        os.mkdir(os.path.join(data_folder, 'github'))
+
     print 'starting...'
     g = Github("75306889b3e191168d86d0547577892a2a24f2dd")
 
@@ -16,9 +30,9 @@ def main():
     counter = 0
     start_time = time.time()
 
-    with jsonlines.open('../../../data/github/users-' + time.strftime('%Y%m%d-%H%M%S', time.localtime(start_time)) + '.jsonl', mode='w', flush=True) as user_writer:
-        with jsonlines.open('../../../data/github/issues-' + time.strftime('%Y%m%d-%H%M%S', time.localtime(start_time)) + '.jsonl', mode='w', flush=True) as issue_writer:
-            for issue in g.get_organization('ruby').get_repo('ruby').get_issues():
+    with jsonlines.open(os.path.join(data_folder, 'github', 'users-' + time.strftime('%Y%m%d-%H%M%S', time.localtime(start_time))) + '.jsonl', mode='w', flush=True) as user_writer:
+        with jsonlines.open(os.path.join(data_folder, 'github', 'issues-' + time.strftime('%Y%m%d-%H%M%S', time.localtime(start_time))) + '.jsonl', mode='w', flush=True) as issue_writer:
+            for issue in g.get_organization('ruby').get_repo('ruby').get_issues(state='all', sort='created', direction='asc'):
                 labels = []
                 for label in issue.labels:
                     labels.append(label.name)
