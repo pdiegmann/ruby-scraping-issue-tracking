@@ -13,8 +13,8 @@ def main():
 
     users = {}
     issues = {}
-
-    if os.path.exists(data_folder) and os.listdir(data_folder) != []:
+    
+    if os.path.exists(data_folder) and os.path.exists(os.path.join(data_folder, 'github')) and os.listdir(os.path.join(data_folder, 'github')) != []:
         if raw_input("enter y to continue previous crawl, all other inputs will start a new crawl: ") == "y":
             for directory_obj in os.listdir(os.path.join(data_folder, 'github')):
                 if not directory_obj.endswith('.jsonl'): continue
@@ -34,7 +34,7 @@ def main():
         os.mkdir(os.path.join(data_folder, 'github'))
 
     print 'starting...'
-    g = Github("75306889b3e191168d86d0547577892a2a24f2dd")
+    g = Github(login_or_token="75306889b3e191168d86d0547577892a2a24f2dd", timeout=30, per_page=100)
 
     print 'fetching and processing issues...'
     counter = 0
@@ -42,7 +42,7 @@ def main():
 
     with jsonlines.open(os.path.join(data_folder, 'github', 'users-' + time.strftime('%Y%m%d-%H%M%S', time.localtime(start_time))) + '.jsonl', mode='w', flush=True) as user_writer:
         with jsonlines.open(os.path.join(data_folder, 'github', 'issues-' + time.strftime('%Y%m%d-%H%M%S', time.localtime(start_time))) + '.jsonl', mode='w', flush=True) as issue_writer:
-            for issue in g.get_organization('ruby').get_repo('ruby').get_issues(state='all', sort='created', direction='asc'):
+            for issue in g.get_organization('rails').get_repo('rails').get_issues(state='all', sort='created', direction='desc'):
                 if issue.id in issues:
                     print ' >>> SKIPPING ISSUE ' + str(issue.id) + ' <<< ',
                     continue
