@@ -3,6 +3,8 @@ from github import GithubObject
 import json
 import sys
 import datetime
+from datetime import time
+from time import sleep
 import time
 import jsonlines
 import os
@@ -44,6 +46,7 @@ def main():
         with jsonlines.open(os.path.join(data_folder, 'github', 'issues-' + time.strftime('%Y%m%d-%H%M%S', time.localtime(start_time))) + '.jsonl', mode='w', flush=True) as issue_writer:
             while True:
                 try:
+                    handle_rate_limit(g)
                     fetch_and_parse_issues(g, user_writer, issue_writer, users, issues, since, counter, start_time)
                     break
                 except Exception as e:
@@ -52,6 +55,21 @@ def main():
                         print '\n\n>>> STARTING RETRY <<<\n\n'
                     else:
                         break
+
+def handle_rate_limit(g):
+    remaining, limit = g.rate_limiting
+    if remaining <= 1:
+        reset_time = datetime.datetime.fromtimestamp(g.rate_limiting_resettime)
+        print 'sleeping from ' + str(datetime.datetime.today()) + ' until ' + str(reset_time),
+        sys.stdout.flush()
+
+        while reset_time > datetime.datetime.today().time():
+            sleep(10)
+            print '.'
+            sys.stdout.flush()
+
+        print 'continue!\n\n'
+        sys.stdout.flush()
 
 def get_oldest_issue_date_or_not_set(issues):
     since = None
@@ -107,6 +125,8 @@ def fetch_and_parse_issues(g, user_writer, issue_writer, users, issues, since, c
             duration = time.time() - start_time
             print '| ' + str(counter) + ' (' + str(datetime.timedelta(seconds=duration)) + ') |',
         sys.stdout.flush()
+
+        handle_rate_limit(g)
 
 def convert_comment(comment, user_id, reactions):
     return {
