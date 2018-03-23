@@ -1,4 +1,5 @@
 from github import Github
+from github import GithubObject
 import json
 import sys
 import datetime
@@ -6,6 +7,7 @@ import time
 import jsonlines
 import os
 import shutil
+from dateutil import parser
 
 def main():
     data_folder = os.path.join('..', '..', '..', 'data')
@@ -13,17 +15,12 @@ def main():
 
     users = {}
     issues = {}
-    
+
+    retry = raw_input('enter y to auto-retry on exception, anything else to break: ') == 'y'
+
     if os.path.exists(data_folder) and os.path.exists(os.path.join(data_folder, 'github')) and os.listdir(os.path.join(data_folder, 'github')) != []:
-        if raw_input("enter y to continue previous crawl, all other inputs will start a new crawl: ") == "y":
-            for directory_obj in os.listdir(os.path.join(data_folder, 'github')):
-                if not directory_obj.endswith('.jsonl'): continue
-                with jsonlines.open(os.path.join(data_folder, 'github', directory_obj), mode='r') as reader:
-                    for obj in reader:
-                        if directory_obj.startswith('users-'):
-                            users[obj['id']] = obj
-                        elif directory_obj.startswith('issues-'):
-                            issues[obj['id']] = obj
+        if raw_input('enter y to continue previous crawl, all other inputs will start a new crawl: ') == 'y':
+            read_users_and_issues(data_folder, users, issues)
         else:
             shutil.move(data_folder, os.path.join(archive_folder, datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')))
 
@@ -40,76 +37,113 @@ def main():
     counter = 0
     start_time = time.time()
 
+    since = get_oldest_issue_date_or_not_set(issues)
+    print 'selecting issues since: ' + str(since)
+
     with jsonlines.open(os.path.join(data_folder, 'github', 'users-' + time.strftime('%Y%m%d-%H%M%S', time.localtime(start_time))) + '.jsonl', mode='w', flush=True) as user_writer:
         with jsonlines.open(os.path.join(data_folder, 'github', 'issues-' + time.strftime('%Y%m%d-%H%M%S', time.localtime(start_time))) + '.jsonl', mode='w', flush=True) as issue_writer:
-            for issue in g.get_organization('rails').get_repo('rails').get_issues(state='all', sort='created', direction='desc'):
-                if issue.id in issues:
-                    print ' >>> SKIPPING ISSUE ' + str(issue.id) + ' <<< ',
-                    continue
+            while True:
+                try:
+                    fetch_and_parse_issues(g, user_writer, issue_writer, users, issues, since, counter, start_time)
+                    break
+                except Exception as e:
+                    print e
+                    if retry:
+                        print '\n\n>>> STARTING RETRY <<<\n\n'
+                    else:
+                        break
 
-                labels = []
-                for label in issue.labels:
-                    labels.append(label.name)
+def get_oldest_issue_date_or_not_set(issues):
+    since = None
+    for key, issue in issues.iteritems():
+        issue_created_at = parser.parse(issue['created_at'])
+        if since is None or since < issue_created_at:
+            since = issue_created_at
 
-                assignees = []
-                if issue.assignee is not None:
-                    assignees.append(parse_and_add_user(users, user_writer, issue.assignee)['id'])
+    if since is None: since = GithubObject.NotSet
+    return since
 
-                for assignee in issue.assignees:
-                    assignees.append(parse_and_add_user(users, user_writer, assignee)['id'])
+def read_users_and_issues(data_folder, users, issues):
+    for directory_obj in os.listdir(os.path.join(data_folder, 'github')):
+        if not directory_obj.endswith('.jsonl'): continue
+        with jsonlines.open(os.path.join(data_folder, 'github', directory_obj), mode='r') as reader:
+            for obj in reader:
+                if directory_obj.startswith('users-'):
+                    users[obj['id']] = obj
+                elif directory_obj.startswith('issues-'):
+                    issues[obj['id']] = obj
 
-                reactions = {}
-                for reaction in issue.get_reactions():
-                    if reaction.content not in reactions: reactions[reaction.content] = []
-                    reactions[reaction.content].append(parse_and_add_user(users, user_writer, reaction.user)['id'])
+def fetch_and_parse_issues(g, user_writer, issue_writer, users, issues, since, counter, start_time):
+    for issue in g.get_organization('rails').get_repo('rails').get_issues(state='all', sort='created', direction='asc', since=since):
+        if issue.id in issues:
+            print ' >>> SKIPPING ISSUE ' + str(issue.id) + ' <<< ',
+            continue
 
-                issues[issue.id] = {
-                    'id': issue.id,
-                    'url': issue.url,
-                    'number': issue.number,
-                    'state': issue.state,
-                    'user': parse_and_add_user(users, user_writer, issue.user)['id'],
-                    'title': issue.title,
-                    'text': issue.body,
-                    'labels': labels,
-                    'assignees': assignees,
-                    'is-pull-request': issue.pull_request is not None,
-                    'closed_at': str(issue.closed_at),
-                    'created_at': str(issue.created_at),
-                    'updated_at': str(issue.updated_at),
-                    'reactions': reactions,
-                    'comments': []
-                }
+        labels = []
+        for label in issue.labels:
+            labels.append(label.name)
 
-                for comment in issue.get_comments():
-                    reactions = {}
-                    for reaction in comment.get_reactions():
-                        if reaction.content not in reactions: reactions[reaction.content] = []
-                        reactions[reaction.content].append(parse_and_add_user(users, user_writer, reaction.user)['id'])
+        assignees = []
+        if issue.assignee is not None:
+            assignees.append(parse_and_add_user(users, user_writer, issue.assignee)['id'])
 
-                    issues[issue.id]['comments'].append({
-                        'id': comment.id,
-                        'text': comment.body,
-                        'url': comment.url,
-                        'user': parse_and_add_user(users, user_writer, comment.user)['id'],
-                        'created_at': str(comment.created_at),
-                        'reactions': reactions
-                    })
+        for assignee in issue.assignees:
+            assignees.append(parse_and_add_user(users, user_writer, assignee)['id'])
 
-                issue_writer.write(issues[issue.id])
+        reactions = parse_reactions(issue, users, user_writer)
 
-                print '.',
-                counter = counter + 1
-                if counter % 10 == 0:
-                    duration = time.time() - start_time
-                    print '| ' + str(counter) + ' (' + str(datetime.timedelta(seconds=duration)) + ') |',
-                    sys.stdout.flush()
+        issues[issue.id] = convert_issue(issue, parse_and_add_user(users, user_writer, issue.user)['id'], labels, assignees, reactions)
 
-#        with open('../../../data/github/users.json' ,'w') as output:
-#            json.dump(users, output, default=datetime_json_serializer)
-#
-#        with open('../../../data/github/issues.json' ,'w') as output:
-#            json.dump(issues, output, default=datetime_json_serializer)
+        for comment in issue.get_comments():
+            reactions = parse_reactions(issue, users, user_writer)
+            user_id = parse_and_add_user(users, user_writer, comment.user)['id']
+            issues[issue.id]['comments'].append(convert_comment(comment, user_id, reactions))
+
+        issue_writer.write(issues[issue.id])
+
+        print '.',
+        counter = counter + 1
+        if counter % 10 == 0:
+            duration = time.time() - start_time
+            print '| ' + str(counter) + ' (' + str(datetime.timedelta(seconds=duration)) + ') |',
+        sys.stdout.flush()
+
+def convert_comment(comment, user_id, reactions):
+    return {
+        'id': comment.id,
+        'text': comment.body,
+        'url': comment.url,
+        'user': user_id,
+        'created_at': str(comment.created_at),
+        'reactions': reactions
+    }
+
+def parse_reactions(issue_or_comment, users, user_writer):
+    reactions = {}
+    for reaction in issue_or_comment.get_reactions():
+        if reaction.content not in reactions: reactions[reaction.content] = []
+        reactions[reaction.content].append(parse_and_add_user(users, user_writer, reaction.user)['id'])
+
+    return reactions
+
+def convert_issue(issue, user_id, labels, assignee_ids, reactions):
+    return {
+        'id': issue.id,
+        'url': issue.url,
+        'number': issue.number,
+        'state': issue.state,
+        'user': user_id,
+        'title': issue.title,
+        'text': issue.body,
+        'labels': labels,
+        'assignees': assignee_ids,
+        'is-pull-request': issue.pull_request is not None,
+        'closed_at': str(issue.closed_at),
+        'created_at': str(issue.created_at),
+        'updated_at': str(issue.updated_at),
+        'reactions': reactions,
+        'comments': []
+    }
 
 def parse_and_add_user(users, writer, user_raw):
     if user_raw is not None and user_raw.id is not None and user_raw.id not in users:
