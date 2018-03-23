@@ -63,9 +63,9 @@ def handle_rate_limit(g):
         print 'sleeping from ' + str(datetime.datetime.today()) + ' until ' + str(reset_time),
         sys.stdout.flush()
 
-        while reset_time > datetime.datetime.today().time():
+        while reset_time.time() > datetime.datetime.today().time():
             sleep(10)
-            print '.'
+            print '.',
             sys.stdout.flush()
 
         print 'continue!\n\n'
