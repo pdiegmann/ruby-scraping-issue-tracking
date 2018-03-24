@@ -33,19 +33,20 @@ def main():
         os.mkdir(os.path.join(data_folder, 'github'))
 
     print 'starting...'
-    g = Github(login_or_token="75306889b3e191168d86d0547577892a2a24f2dd", timeout=30, per_page=100)
+    g = Github(login_or_token="75306889b3e191168d86d0547577892a2a24f2dd", timeout=60, per_page=100, user_agent='UniversityOfCologneSNACrawl/0.1')
 
     print 'fetching and processing issues...'
     counter = 0
     start_time = time.time()
 
-    since = get_oldest_issue_date_or_not_set(issues)
-    print 'selecting issues since: ' + str(since)
-
     with jsonlines.open(os.path.join(data_folder, 'github', 'users-' + time.strftime('%Y%m%d-%H%M%S', time.localtime(start_time))) + '.jsonl', mode='w', flush=True) as user_writer:
         with jsonlines.open(os.path.join(data_folder, 'github', 'issues-' + time.strftime('%Y%m%d-%H%M%S', time.localtime(start_time))) + '.jsonl', mode='w', flush=True) as issue_writer:
             while True:
                 try:
+                    since = get_oldest_issue_date_or_not_set(issues)
+                    print 'selecting issues since: ' + str(since)
+                    print 'already crawled ' + str(len(issues)) + ' issues and ' + str(len(users)) + ' users'
+
                     handle_rate_limit(g)
                     fetch_and_parse_issues(g, user_writer, issue_writer, users, issues, since, counter, start_time)
                     break
@@ -60,7 +61,7 @@ def handle_rate_limit(g):
     remaining, limit = g.rate_limiting
     if remaining <= 1:
         reset_time = datetime.datetime.fromtimestamp(g.rate_limiting_resettime)
-        print 'sleeping from ' + str(datetime.datetime.today()) + ' until ' + str(reset_time),
+        print '\n\nsleeping from ' + str(datetime.datetime.today()) + ' until ' + str(reset_time),
         sys.stdout.flush()
 
         while reset_time.time() > datetime.datetime.today().time():
@@ -92,9 +93,12 @@ def read_users_and_issues(data_folder, users, issues):
                     issues[obj['id']] = obj
 
 def fetch_and_parse_issues(g, user_writer, issue_writer, users, issues, since, counter, start_time):
-    for issue in g.get_organization('rails').get_repo('rails').get_issues(state='all', sort='created', direction='asc', since=since):
+    skip_counter = 0
+    # since only looks for updates. But we sort by creation_date, so we cannot really skip all found items...
+    for issue in g.get_organization('rails').get_repo('rails').get_issues(state='all', since=since, sort='created', direction='asc'):
         if issue.id in issues:
-            print ' >>> SKIPPING ISSUE ' + str(issue.id) + ' <<< ',
+            skip_counter = skip_counter + 1
+            print ' >>> SKIPPING ' + str(issue.id) + ' (' + str(issue.created_at) + ') #' + str(skip_counter) + ' <<< ',
             continue
 
         labels = []
