@@ -59,7 +59,7 @@ def main():
 
 def handle_rate_limit(g):
     remaining, limit = g.rate_limiting
-    if remaining <= 1:
+    if remaining <= 10:
         reset_time = datetime.datetime.fromtimestamp(g.rate_limiting_resettime)
         print '\n\nsleeping from ' + str(datetime.datetime.today()) + ' until ' + str(reset_time),
         sys.stdout.flush()
