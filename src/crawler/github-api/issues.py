@@ -33,7 +33,10 @@ def main():
         os.mkdir(os.path.join(data_folder, 'github'))
 
     print 'starting...'
-    g = Github(login_or_token="75306889b3e191168d86d0547577892a2a24f2dd", timeout=60, per_page=100, user_agent='UniversityOfCologneSNACrawl/0.1')
+    # old token is invalid by no_top_words
+    # to generate a personal token, see: https://help.github.com/articles/creating-a-personal-access-token-for-the-command-line/
+    # HOWEVER, it should not be commited publicly.
+    g = Github(login_or_token="", timeout=60, per_page=100, user_agent='UniversityOfCologneSNACrawl/0.1')
 
     print 'fetching and processing issues...'
     counter = 0
